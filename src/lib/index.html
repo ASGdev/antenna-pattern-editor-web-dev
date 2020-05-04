@@ -1,0 +1,707 @@
+<!DOCTYPE html>
+<meta charset="utf-8">
+<style>
+
+.frame {
+  fill: none;
+  stroke: #000;
+}
+
+.axis text {
+  font: 10px sans-serif;
+}
+
+.axis line,
+.axis circle {
+  fill: none;
+  stroke: #777;
+  stroke-dasharray: 1,4;
+}
+
+.axis :last-of-type circle {
+  stroke: #333;
+  stroke-dasharray: none;
+}
+
+.line {
+  fill: none;
+  stroke: red;
+  stroke-width: 1.10px;
+}
+
+</style>
+<body>
+<script src="https://d3js.org/d3.v5.min.js"></script>
+
+
+<div id="placeholder"></div>
+
+<input type="checkbox" id="scales" name="scales"
+         checked>
+ <label for="scales">Show isotropic radiation</label>
+
+<button onclick="drawBeam()">Start continuous drawing</button>
+<button onclick="drawBeam()">End continuous drawing</button>
+
+<br>
+
+<button onclick="drawBeam()">Modify path</button>
+
+<br>
+
+<button onclick="drawBeam()">Draw beam</button>
+<label for="tentacles">Beamwidth at -3dB (degrees)</label>
+<input type="number" id="tentacles" name="tentacles"
+       min="1" max="100">
+
+<br>
+
+
+<button onclick="drawBeam()">Increase main beam magnitude by 3dB</button>
+<p>Pattern description</p>
+<ul>
+	<li>
+		Main beam : 
+		<ul>
+			<li>Magnitude : </li>
+			<li>Angle : </li>
+		</ul>
+	</li>
+	<li>
+		Back lobes # :
+	</li>
+</ul>
+
+<button onclick="patternFeatureRotatePattern(90)">Rotate 90°</button>
+<button onclick="patternFeatureSymmetrize(0, 'BtoT')">Mirror by x axis from bottom to top</button>
+<button onclick="patternFeatureCreateBackLobe(2, 20, 0)">Create back lobe</button>
+<button onclick="patternFeatureCreateLobe(11, 10, 220)">Create back lobe</button>
+
+
+<button onclick="drawLine()">Draw line</button>
+<label for="pet-select">Choose an interpolation method :</label>
+<select name="interpolation-s" id="interpolation-s">
+    <option value="dog">Dog</option>
+    <option value="cat">Cat</option>
+</select>
+
+	   
+<script>
+
+var data = [
+		{a: 0, g: 10, id:"p1"},
+		{a: 5, g: 8, id:"p2"},
+		{a: 10, g: 10, id:"p3"},
+		{a: 15, g: 10, id:"p4"},
+		{a: 20, g: 10, id:"p5"},
+		{a: 25, g: 8, id:"p6"},
+		{a: 30, g: 7, id:"p7"}
+]
+
+// TODO
+var idIndex = 7;
+
+var width = 1100,
+    height = 720,
+    radius = 250
+
+var r = d3.scaleLinear()
+    .domain([-5, 15])
+    .range([-5, radius]);
+	
+var _r = d3.scaleLinear()
+    .domain([-5, radius])
+    .range([-5, 15]);
+
+var line = d3.lineRadial()
+    .radius(function(d) { return r(d.g); })
+    .angle(function(d) { return (d.a + 90) * Math.PI / 180 })
+	.curve(d3.curveLinear)
+
+var svg = d3.select("#placeholder").append("svg")
+    .attr("width", width)
+    .attr("height", height)
+	.attr("id", "svgp")
+	.on("click", addPoint)
+	
+var pcont = svg.append("g")
+    .attr("transform", "translate(" + width / 2 + "," + height / 2 + ")")
+	.attr("id", "testid")
+	
+var isoCircle = pcont.append("g")
+	.attr("class", "iso")
+	.append("circle")
+	.attr("r", r(1))
+	.attr("fill", "none")
+	.attr("stroke-width", 2)
+	.attr("stroke", "black")
+
+var gr = pcont.append("g")
+    .attr("class", "r axis")
+  .selectAll("g")
+    .data(r.ticks(5).slice(1))
+  .enter().append("g");
+
+gr.append("circle")
+   .attr("r", r);
+
+gr.append("text")
+    .attr("y", function(d) { return -r(d) - 4; })
+    .attr("transform", "rotate(15)")
+    .style("text-anchor", "middle")
+    .text(function(d) { return d; });
+
+var ga = pcont.append("g")
+    .attr("class", "a axis")
+  .selectAll("g")
+    .data(d3.range(0, 360, 30))
+  .enter().append("g")
+    .attr("transform", function(d) { return "rotate(" + -d + ")"; });
+
+ga.append("line")
+    .attr("x2", radius);
+
+ga.append("text")
+    .attr("x", radius + 6)
+    .attr("dy", ".35em")
+    .style("text-anchor", function(d) { return d < 270 && d > 90 ? "end" : null; })
+    .attr("transform", function(d) { return d < 270 && d > 90 ? "rotate(180 " + (radius + 6) + ",0)" : null; })
+    .text(function(d) { return d + "°"; });
+
+pcont.append("g")
+	.attr("id", "pointsCont");
+
+let curve = "curveNatural"
+	
+function drawLine(){
+	d3.select("#idd").remove();
+
+	let line = d3.line()
+		.x(d => {
+			var an = -d.a
+			ra = r(d.g)
+			return ra * Math.cos(an * Math.PI / 180)
+			y = ra * Math.sin(an * Math.PI / 180);
+		}) // This accessor retrieves the x attribute from the data
+		.y(d => {
+			var an = -d.a
+			ra = r(d.g)
+			return ra * Math.sin(an * Math.PI / 180);
+		})
+		.curve(d3[curve])
+	
+	line(data)
+	
+	pcont.append("path")
+		.datum(data)
+		.attr("class", "line")
+		.attr("d", line)
+		.attr("id", "idd")
+		.on("click", pathClicked)
+		
+		
+		
+}
+
+function drawPoints(){
+	//pcont.selectAll("point").remove()
+	
+}
+	  
+function deletePoint(){
+	d3.event.preventDefault()
+
+	console.log("deleting point " + d3.select(this).node().getAttribute("id"));
+	
+	for( var i = 0; i < data.length; i++){ if ( data[i].id === d3.select(this).node().getAttribute("id")) { data.splice(i, 1); }}
+	
+	updateView()
+	
+}
+
+let globalStartPointIndex = 0;
+let drawingStartPointIndex = null;
+
+function addPoint(){
+	d3.event.preventDefault()
+	
+	if(pathClickLock){
+		return;
+	}
+	
+	if(continuousDrawingLock){
+		return;
+	}
+	
+	if(beamCreationLock){
+		continueDrawBeam(d3.mouse(pcont.node()));
+	} else {
+		var coords = d3.mouse(pcont.node());
+		
+		console.log(coords);
+		
+		var extrapolated = {};
+		extrapolated.a = calcAngleDegrees(coords[0], coords[1]);
+		extrapolated.g = _r(Math.sqrt((coords[0] * coords[0]) + (coords[1] * coords[1])));
+		extrapolated.id = "p" + (++idIndex);
+		console.log(extrapolated);
+		
+		data.push(extrapolated);
+		
+		drawLine()
+		
+		updateView()
+		
+		console.log(data);
+	}
+}
+
+function createDataPoint(angle, magnitude){
+	var p = {}
+	p.a = angle
+	p.g = magnitude
+	p.id = "p" + (++idIndex);
+		
+	data.push(p);
+}
+
+function insertPoint(point, index){
+	data.splice(index, 0, point);
+}
+
+function focusPoint(){
+	console.log(this)
+	d3.select(this).attr("r", 5);
+}
+
+function unfocusPoint(){
+	d3.event.preventDefault()
+
+	d3.select(this).attr("r", 3);
+}
+
+function selectPoint(){
+	
+}
+
+function calcAngleDegrees(x, y) {
+	let t = Math.atan2(y, x) * 180 / Math.PI;
+	return -(t - 360) % 360;
+}
+
+let beamCreationLock = false;
+function drawBeam(){
+	
+	beamCreationLock = true;
+	
+}
+
+let continuousDrawingLock = false;
+let pathClickLock = false;
+function pathClicked(){
+	d3.event.preventDefault()
+	
+	pathClickLock = true;
+	
+	console.log("Path clicked")
+	var coords = d3.mouse(pcont.node());
+	var extrapolated = {};
+	extrapolated.a = -calcAngleDegrees(coords[0], coords[1]);
+	extrapolated.g = _r(Math.sqrt((coords[0] * coords[0]) + (coords[1] * coords[1])));
+	
+	//console.log("New point at angle " + extrapolated.a);
+	//console.log("New point at gain " + extrapolated.g);
+	
+	//insertDataPoint(extrapolated)
+	
+	getNeighbors(coords)
+}
+
+function continueDrawBeam(coords){
+	console.log("Drawing beam")
+	
+	var extrapolated = [];
+	extrapolated.push(-calcAngleDegrees(coords[0], coords[1]));
+	extrapolated.push(_r(Math.sqrt((coords[0] * coords[0]) + (coords[1] * coords[1]))));
+		
+	console.log("Peak at angle " + extrapolated[0]);
+	console.log("Peak with gain " + extrapolated[1]);
+	
+	let beamw = document.getElementById("tentacles").value;
+	console.log("Beamwidth : " + beamw)
+	
+	let bound1 = []
+	bound1[0] = -(extrapolated[0] - (beamw / 2))
+	bound1[1] = extrapolated[1] - 3
+	data.push(bound1)
+	data.push(extrapolated)
+	let bound2 = []
+	bound2[0] = -(extrapolated[0] + (beamw / 2))
+	bound2[1] = extrapolated[1] - 3
+	data.push(bound2)
+	
+	console.log(data);
+	
+	drawLine();
+	drawPoints();
+	
+	beamCreationLock = false;
+}
+
+function insertDataPoint(point){
+}
+
+function updateDataPoint(pointId, update){
+	data.forEach(point => {
+		if(point.id === pointId){
+			point.a = update.a;
+			point.g = update.g;
+		}
+	});
+}
+
+function setContinuousDrawing(state){
+	if(state === "off"){
+		continuousDrawingLock = true;
+	} else {
+		continuousDrawingLock = false;
+	}
+}
+
+function dragStarted(d) {
+	
+}
+
+function dragging(d){
+	
+	var extrapolated = {};
+	extrapolated.a = calcAngleDegrees(d3.event.x, d3.event.y);
+	extrapolated.g = _r(Math.sqrt((d3.event.x * d3.event.x) + (d3.event.y * d3.event.y)));
+		
+	console.log("Peak at angle " + extrapolated.a);
+	console.log("Peak with gain " + extrapolated.g);
+	d3.select(this).attr("transform", function(d) {
+			console.log(extrapolated)
+			var an = -extrapolated.a,
+			ra = r(extrapolated.g),
+			x = ra * Math.cos(an * Math.PI / 180),
+			y = ra * Math.sin(an * Math.PI / 180);
+			return "translate(" + [x, y] + ")";
+		  })
+	
+	
+	// udpate point definition in data
+	let targetId = d3.select(this).attr("id");
+	console.log("Updating point with id " + targetId);
+	updateDataPoint(targetId, extrapolated);
+
+	drawLine();
+
+	
+}
+
+// used to get adjacents points to the mouse position
+function getNeighbors(coords){
+
+	let p = document.getElementById("svgp").createSVGPoint();
+	p.x = coords[0];
+	p.y = coords[1];
+	console.log(p);
+	
+	// parse path to lines
+	let pathData = document.getElementById("idd").getAttribute("d");
+	let lines = pathData.split("L")
+
+	lines[0] = lines[0].substr(1);
+	
+	console.log(lines);
+	
+	for (let i = 1; i < lines.length; i++) {
+		let startP = lines[i-1].split(",");
+		let stopP = lines[i].split(",");
+		
+		let subLine = d3.line()([[startP[0], startP[1]], [stopP[0], stopP[1]]])
+			
+		pcont
+		  .append("path")
+		  .attr("d", subLine)
+		  .attr("class", "line")
+		  .attr("id", "lineTest")
+		
+
+		var lt = document.getElementById("lineTest");
+		console.log(lt);
+		
+		if(lt.isPointInStroke(p)){
+			var extrapolated = {};
+			extrapolated.a = calcAngleDegrees(coords[0], coords[1]);
+			extrapolated.g = _r(Math.sqrt((coords[0] * coords[0]) + (coords[1] * coords[1])));
+			extrapolated.id = "p" + (++idIndex);
+			insertPoint(extrapolated, i);
+			
+			break;
+			
+		}
+		
+		d3.select(lt).remove()
+	}
+	
+	drawLine();
+
+
+}
+
+function updateView(){
+	
+	/*d3.select("#pointsCont")
+	.selectAll("circle")
+	.remove()*/
+	
+	let update = d3.select("#pointsCont")
+		.selectAll("circle")
+		.data(data, function(d) { return d.id } )
+		
+	let enter = update.enter()
+		.append("circle")
+		  .attr("class", "point")
+		  .attr("id", function(d) {
+			return d.id;
+		  })
+		  .attr("transform", function(d) {
+			// get angle and radius
+			var an = -d.a,
+			ra = r(d.g),
+			x = ra * Math.cos(an * Math.PI / 180),
+			y = ra * Math.sin(an * Math.PI / 180);
+			return "translate(" + [x, y] + ")";
+		  })
+		  .attr("r", 3)
+		  .attr("fill", "red")
+		  .on("mouseover", focusPoint)
+		  .on("mouseleave", unfocusPoint)
+		  .on("click", selectPoint)
+		  .on("contextmenu", deletePoint)
+		  .call(d3.drag().on("start", dragStarted).on("drag", dragging))
+		  
+	update.exit().remove()
+    
+}
+
+function patternFeatureDetectMainLobe(){
+}
+
+function patternFeatureDetectBackLobes(){
+	// get main lobe angle, then search for high values in a-180°
+	let precision = 10; // search precision in degrees relative to the a-180° angle
+	
+	let mainLobe = getMainLobePoint();
+	let startA = (mainLobe.a - (precision / 2) + 360) % 360
+	let stopA = (mainLobe.a + (precision / 2) + 360) % 360
+	
+	let selectedPoints = data.filter(p => { (p.a > startA) && (p.a < stopA)})
+	
+	console.log(selectedPoints)
+	
+	// to catch
+	let backLobePeakPoint = selectedPoints[0];
+	
+	selectedPoints.forEach(el => {
+		if(el.g > backLobePeakPoint.g){
+			backLobePeakPoint = el;
+		}
+	});
+	
+	return backLobePeakPoint;
+}
+
+function patternFeatureDetectSideLobes(){
+}
+
+function patternFeatureIncreaseMainLobeMagnitude(add_value){
+	
+}
+
+function patternFeatureSetMainLobeMagnitude(magnitude){
+	
+}
+
+function patternFeatureRotateLobe(lobePoint, rotAngle){
+
+}
+
+function patternFeatureCreateBackLobe(magnitude, width, driftAngle){
+	let mainLobe = getMainLobePoint();
+	console.log(mainLobe)
+	
+	let backLobePeak = {}
+	backLobePeak.g = magnitude;
+	backLobePeak.a = (((mainLobe.a + 180) + driftAngle) + 360 ) % 360
+	
+	console.log(backLobePeak);
+	
+	let backLobeLeftBoundary = {}
+	backLobeLeftBoundary.g = magnitude - 3;
+	backLobeLeftBoundary.a = ((backLobePeak.a - width / 2) + 360 ) % 360
+	
+	console.log(backLobeLeftBoundary)
+	
+	let backLobeRightBoundary = {}
+	backLobeRightBoundary.g = magnitude - 3;
+	backLobeRightBoundary.a = ((backLobePeak.a + width / 2) + 360 ) % 360
+	
+	console.log(backLobeRightBoundary)
+	
+	createDataPoint(backLobeLeftBoundary.a, backLobeLeftBoundary.g)
+	createDataPoint(backLobePeak.a, backLobePeak.g)
+	createDataPoint(backLobeRightBoundary.a, backLobeRightBoundary.g)
+
+}
+
+function patternFeatureCreateLobe(magnitude, width, angle){
+	let lobePeak = {}
+	lobePeak.g = magnitude;
+	lobePeak.a = (angle + 360 ) % 360
+	
+	console.log(lobePeak);
+	
+	let lobeLeftBoundary = {}
+	lobeLeftBoundary.g = magnitude - 3;
+	lobeLeftBoundary.a = ((lobePeak.a - width / 2) + 360 ) % 360
+	
+	console.log(lobeLeftBoundary)
+	
+	let lobeRightBoundary = {}
+	lobeRightBoundary.g = magnitude - 3;
+	lobeRightBoundary.a = ((lobePeak.a + width / 2) + 360 ) % 360
+	
+	console.log(lobeRightBoundary)
+	
+	createDataPoint(lobeLeftBoundary.a, lobeLeftBoundary.g)
+	createDataPoint(lobePeak.a, lobePeak.g)
+	createDataPoint(lobeRightBoundary.a, lobeRightBoundary.g)
+}
+
+
+function patternFeatureRotatePattern(rotAngle){
+	data.forEach(el => {
+		el.a += rotAngle
+	});
+	
+	updateView()
+}
+
+function patternFeatureAddGratingLobes(count, angleRange, amplitude){
+}
+
+function patternFeatureSymmetrize(axisAngle, direction){
+	//axisAngle = {0, 90}
+	axisAngle = 0;
+	
+	if(direction === "BtoT"){
+		// delete points with angle in range ]0, 180[
+		// insert points translated from range [360, 180] in the beginning of data
+		
+		tempData = data.filter(p => p.a > 180 );
+		data = []
+		
+		console.log(tempData);
+		
+		tempData.forEach(el => {
+			createDataPoint(360 - el.a, el.g);
+		})
+		
+		data = data.concat(tempData);
+		
+		console.log(data)
+		
+		updateView()
+		
+	} else {
+	}
+}
+
+function patternFeatureRotateBeam(rotAngle){
+}
+
+function patternFeatureSelectionRotateSelection(rotAngle){
+}
+
+function patternFeatureTranslatePattern(distance){
+}
+
+function patternFeatureNormalize(){
+}
+
+function patternFeatureSetFTBRatio(fixed){
+ // fixed = { "front", "back" }
+}
+
+// === patternFeatureDetectMainLobe ?
+function getMainLobePoint(){
+	let beamPoint = data[0]
+	data.forEach(el => {
+		if(el.g > beamPoint.g){
+			beamPoint = el;
+		}
+	})
+	
+	return beamPoint
+}
+
+function test(){
+	let p = getMainLobePoint();
+	console.log(p);
+}
+
+function simplifyModel(samplingSize){
+	// TODO : choose a good interpolation method
+}
+
+function plotDipole(){
+}
+
+function plotPatch(l, w, f){
+	
+}
+
+function setInterpolation(){
+	
+}
+
+function setDomain(){
+}
+
+function vizFeatureMarkMainLobe(){
+	let mainLobe = getMainLobePoint();
+	
+	// search for point at magn - 3dB in data, or interpolate it
+	const filterIndexInData = (element) => element === mainLobe.g;
+	
+	let mainLobePointIndexInData = data.findIndex(filterIndexInDataPoint)
+	
+	// extract the left and right side of the datapoint
+	let leftPoints = data.slice(0, mainLobePointIndexInData)
+	let rightPoints = data.slice(mainLobePointIndexInData)
+	
+	const filterIndexMagMinus3 = (element) =>
+	
+	// search left point
+	//let magnitudeToSearch = mainLobe.g - 3;
+	//let leftPointIndex = leftPoints.findIndex()
+}
+
+let config = {
+	domain:
+		{
+			minMagnitude: 0,
+			maxMagnitude: 15
+		}
+}
+
+function interpolatePoint(p0, x, p1){
+	return (p0.y * (p1.x - x) + p1.y * (x - p0.x)) / (p1.x - p0.x)
+}
+
+</script>
+</body>
+</html>
