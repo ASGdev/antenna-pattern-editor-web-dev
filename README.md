@@ -1,3 +1,5 @@
+**The -dev suffix means that it is not usable for end-users and may not launch - even if it is on the "master" branch. You have been warned.**
+
 This project was bootstrapped with [Create React App](https://github.com/facebook/create-react-app).
 
 ## Available Scripts
